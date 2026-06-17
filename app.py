@@ -1,3 +1,5 @@
+
+__import__('os').environ['STREAMLIT_SERVER_MAX_MESSAGE_SIZE'] = '500'
 import streamlit as st
 import pickle
 import re
