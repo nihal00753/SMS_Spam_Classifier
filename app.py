@@ -2,7 +2,7 @@
 
 import json
 import os
-
+import sys
 import joblib
 import streamlit as st
 
@@ -15,7 +15,7 @@ import subprocess
 # no cross-version sklearn mismatch between local and Streamlit Cloud.
 if not os.path.exists("pipeline.joblib"):
     with st.spinner("First boot: training model (takes ~15 seconds)..."):
-        subprocess.run(["python", "train.py"], check=True)
+        subprocess.run([sys.executable, "train.py"], check=True)
 
 PIPELINE_PATH = "pipeline.joblib"
 METRICS_PATH = "metrics.json"
