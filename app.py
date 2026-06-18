@@ -1,10 +1,4 @@
-"""
-Streamlit front-end for the SMS spam classifier.
 
-Loads the artifact produced by train.py -- it does NOT retrain on every
-app start. Run `python train.py` once first to produce pipeline.joblib
-and metrics.json.
-"""
 
 import json
 import os
@@ -13,6 +7,15 @@ import joblib
 import streamlit as st
 
 from preprocessing import transform_text
+
+import subprocess
+
+# Train on first boot if the artifact doesn't exist yet.
+# This makes the app self-contained: no committed .joblib,
+# no cross-version sklearn mismatch between local and Streamlit Cloud.
+if not os.path.exists("pipeline.joblib"):
+    with st.spinner("First boot: training model (takes ~15 seconds)..."):
+        subprocess.run(["python", "train.py"], check=True)
 
 PIPELINE_PATH = "pipeline.joblib"
 METRICS_PATH = "metrics.json"
