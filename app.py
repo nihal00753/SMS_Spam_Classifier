@@ -1,81 +1,94 @@
+"""
+Streamlit front-end for the SMS spam classifier.
+
+Loads the artifact produced by train.py -- it does NOT retrain on every
+app start. Run `python train.py` once first to produce pipeline.joblib
+and metrics.json.
+"""
+
+import json
 import os
-import re
-import string
-import pickle
-import scipy.sparse as sp
+
+import joblib
 import streamlit as st
-import pandas as pd
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem import PorterStemmer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 
-nltk.download('stopwords', quiet=True)
-nltk.download('punkt_tab', quiet=True)
+from preprocessing import transform_text
 
-ps = PorterStemmer()
-sw = set(stopwords.words('english'))
+PIPELINE_PATH = "pipeline.joblib"
+METRICS_PATH = "metrics.json"
 
-
-def transform(text):
-    text = text.lower()
-    text = re.sub(r'http\S+|www\S+', 'url', text)
-    text = re.sub(r'\b\d{7,}\b', 'phonenumber', text)
-    text = re.sub(r'[£$€]\d+', 'currency', text)
-    text = re.sub(r'\d+', '', text)
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    return ' '.join([ps.stem(w) for w in text.split() if w not in sw])
-
-
-@st.cache_resource(show_spinner="Training model, please wait...")
-def train_model():
-    df = pd.read_csv('spam.csv', encoding='latin-1')[['v1', 'v2']]
-    df.columns = ['target', 'text']
-    df.drop_duplicates(inplace=True)
-    df['target'] = df['target'].map({'ham': 0, 'spam': 1})
-    df['clean'] = df['text'].apply(transform)
-
-    X_train, _, y_train, _ = train_test_split(
-        df['clean'], df['target'],
-        test_size=0.2, random_state=2, stratify=df['target']
-    )
-
-    wv = TfidfVectorizer(max_features=3000, ngram_range=(1, 2))
-    cv = TfidfVectorizer(analyzer='char_wb', max_features=2000, ngram_range=(2, 4))
-    X_tr = sp.hstack([wv.fit_transform(X_train), cv.fit_transform(X_train)])
-
-    model = LogisticRegression(C=3, class_weight='balanced', max_iter=1000, random_state=42)
-    model.fit(X_tr, y_train)
-
-    return wv, cv, model
-
-
-# ── Page config ──────────────────────────────────────────────
 st.set_page_config(page_title="SMS Spam Classifier", page_icon="📱")
+
+
+@st.cache_resource(show_spinner="Loading model...")
+def load_pipeline():
+    if not os.path.exists(PIPELINE_PATH):
+        st.error(
+            f"`{PIPELINE_PATH}` not found. Run `python train.py` first to "
+            "train and save the model, then restart this app."
+        )
+        st.stop()
+    return joblib.load(PIPELINE_PATH)
+
+
+def load_metrics():
+    if os.path.exists(METRICS_PATH):
+        with open(METRICS_PATH) as f:
+            return json.load(f)
+    return None
+
+
+pipeline = load_pipeline()
+metrics = load_metrics()
+
+with st.sidebar:
+    st.header("📱 SMS Spam Classifier")
+    st.markdown(
+        "Hybrid word + character TF-IDF features, feeding a Logistic "
+        "Regression classifier explicitly selected to minimize false "
+        "positives (real messages wrongly marked as spam)."
+    )
+    st.markdown("**Tech stack:** scikit-learn · NLTK · pandas · Streamlit")
+    if metrics:
+        st.markdown(
+            f"**Held-out test performance:** {metrics['precision']*100:.0f}% "
+            f"precision, {metrics['recall']*100:.0f}% recall"
+        )
+    st.markdown("[View source on GitHub](https://github.com/nihal00753/SMS_Spam_Classifier)")
+
 st.title("📱 SMS Spam Classifier")
 st.markdown("Enter an SMS or email message to check if it's **spam** or **not spam**.")
 
-wv, cv, model = train_model()
+EXAMPLES = {
+    "Try a spam example": (
+        "Congratulations! You've WON a $1000 gift card. Call 09061743810 "
+        "now to claim your prize"
+    ),
+    "Try a ham example": "Hey, are we still meeting for lunch at 1pm tomorrow?",
+}
 
-# ── Input ────────────────────────────────────────────────────
-input_sms = st.text_area("Enter the message", height=150, placeholder="Type your message here…")
+if "sms_input" not in st.session_state:
+    st.session_state.sms_input = ""
+
+example_cols = st.columns(len(EXAMPLES))
+for col, (label, text) in zip(example_cols, EXAMPLES.items()):
+    if col.button(label, use_container_width=True):
+        st.session_state.sms_input = text
+
+input_sms = st.text_area(
+    "Enter the message", height=150, placeholder="Type your message here…",
+    key="sms_input",
+)
 
 if st.button("Predict", type="primary"):
     if not input_sms.strip():
         st.warning("Please enter a message first.")
     else:
-        cleaned = transform(input_sms)
-        X = sp.hstack([wv.transform([cleaned]), cv.transform([cleaned])])
-
-        result    = model.predict(X)[0]
-        proba     = model.predict_proba(X)[0]
-        spam_prob = proba[1]
-        ham_prob  = proba[0]
+        proba = pipeline.predict_proba([input_sms])[0]
+        spam_prob, ham_prob = proba[1], proba[0]
+        result = int(spam_prob >= 0.5)  # default cutoff -- confirmed near-optimal in the notebook
 
         st.markdown("---")
-
         if result == 1:
             st.error("🚨 **SPAM**")
         else:
@@ -87,4 +100,20 @@ if st.button("Predict", type="primary"):
 
         col1, col2 = st.columns(2)
         col1.metric("Spam probability", f"{spam_prob * 100:.1f}%")
-        col2.metric("Ham probability",  f"{ham_prob  * 100:.1f}%")
+        col2.metric("Ham probability", f"{ham_prob * 100:.1f}%")
+
+        with st.expander("See how your message was cleaned before scoring"):
+            st.code(transform_text(input_sms) or "(nothing left after cleaning)")
+
+if metrics:
+    with st.expander("Model performance (held-out test set)"):
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Accuracy", f"{metrics['accuracy']*100:.2f}%")
+        c2.metric("Precision", f"{metrics['precision']*100:.2f}%")
+        c3.metric("Recall", f"{metrics['recall']*100:.2f}%")
+        c4.metric("F1", f"{metrics['f1']*100:.2f}%")
+        st.caption(
+            f"Evaluated on {metrics['n_test']} held-out messages "
+            f"(model trained on {metrics['n_train']} messages for this evaluation; "
+            "the deployed model is refit on the full dataset)."
+        )
