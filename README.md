@@ -9,9 +9,7 @@ A spam/ham classifier for SMS messages that goes beyond the standard tutorial re
 ![pandas](https://img.shields.io/badge/pandas-Data%20Wrangling-150458?logo=pandas&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-<!-- Once deployed, replace the URL below and uncomment:
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app-name.streamlit.app)
--->
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sms-spam-classifier-0753.streamlit.app)
 
 ## Why precision, not accuracy
 
@@ -117,6 +115,23 @@ For [Streamlit Community Cloud](https://share.streamlit.io): push this repo (inc
 - Probability calibration (`CalibratedClassifierCV`) if the raw probabilities need to be more trustworthy as actual percentages, not just a ranking signal.
 - A small FastAPI wrapper around `pipeline.joblib` for a proper inference API instead of (or alongside) the Streamlit UI.
 - Periodic retraining as new labeled messages come in, with the same held-out evaluation gate before any new model replaces the deployed one.
+
+## Dataset limitations
+
+- Small and dated: 5,572 messages collected in the early 2010s, so newer spam patterns aren't represented.
+- Heavy class imbalance: ~87% ham / ~13% spam, so the 131-message spam test set is a thin basis for recall estimates.
+- English-only SMS, so performance on other languages or channels (WhatsApp, RCS) is untested.
+- No adversarial examples: spam wasn't written to evade a classifier, unlike real-world spam.
+- Label quality isn't independently verified; no published inter-annotator agreement score.
+
+## What can be improved
+
+- Augment with more recent spam datasets to reduce the temporal gap with current spam patterns.
+- Add metadata features (message length, digit ratio, punctuation count) alongside TF-IDF.
+- Try SBERT embeddings as an additional feature block for semantic signal beyond bag-of-words.
+- Tune the decision threshold on a validation set rather than assuming 0.5 is optimal.
+- Wrap the pipeline in a FastAPI endpoint for a proper inference API alongside the Streamlit UI.
+- Add drift monitoring to detect when incoming spam patterns diverge from the training distribution.
 
 ## License
 
